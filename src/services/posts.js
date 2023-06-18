@@ -38,13 +38,12 @@ class PostsService {
      * @param {number} id
      */
     async getPost(id) {
-        const response = await this.#client.request({
+        const data = await this.#client.request({
             method: 'GET',
             path: `/posts/${id}`,
+        }, {
             timeout: 5000,
         });
-
-        const data = await response.body.json();
 
         return {
             id: data.id,

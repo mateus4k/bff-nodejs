@@ -1,30 +1,42 @@
 const { setTimeout } = require('timers/promises');
 const { Client } = require('undici');
-const TimeoutException = require('./exceptions/Timeout');
+const TimeoutException = require('./exceptions/TimeoutException');
 
 class Http {
     #client;
 
+    /**
+     * @param {string} url 
+     */
     constructor(url) {
         this.#client = new Client(url);
     }
 
     /**
-     * @param {import('undici').Dispatcher.RequestOptions & {timeout:number}} params
+     * @param {import('undici').Dispatcher.ResponseData} params
+     * @param {{timeout: number}} options
      */
-    async request({ timeout = 10000, ...params }) {
+    async request(params, { timeout } = {}) {
         const cancelTimeout = new AbortController();
         const cancelRequest = new AbortController();
 
-        const response = await Promise.race([
-            this.#sendRequest({ params, cancelRequest, cancelTimeout }),
-            this.#timeout({ delay: timeout, cancelRequest, cancelTimeout }),
-        ]);
+        try {
+            const response = await Promise.race([
+                this.#makeRequest(params, { cancelTimeout, cancelRequest }),
+                this.#timeout(timeout, { cancelTimeout, cancelRequest }),
+            ]);
 
-        return response;
+            return response;
+        } catch (error) {
+            if (error instanceof TimeoutException) {
+                console.log('Timeout exceeded');
+            }
+
+            throw error;
+        }
     }
 
-    async #sendRequest({ params, cancelTimeout, cancelRequest }) {
+    async #makeRequest(params, { cancelTimeout, cancelRequest }) {
         try {
             const response = await this.#client.request({
                 ...params,
@@ -32,19 +44,23 @@ class Http {
                 signal: cancelRequest.signal,
             });
 
-            return response;
-        } catch (error) {
-            if (error.code === 'UND_ERR_ABORTED') throw new TimeoutException();
+            const data = await response.body.json();
 
-            throw error;
+            return data;
         } finally {
             cancelTimeout.abort();
         }
     }
 
-    async #timeout({ delay, cancelTimeout, cancelRequest }) {
-        await setTimeout(delay, undefined, { signal: cancelTimeout.signal, });
-        cancelRequest.abort();
+    async #timeout(delay, { cancelTimeout, cancelRequest }) {
+        try {
+            await setTimeout(delay, undefined, { signal: cancelTimeout.signal });
+            cancelRequest.abort();
+        } catch (error) {
+            return;
+        }
+
+        throw new TimeoutException();
     }
 }
 

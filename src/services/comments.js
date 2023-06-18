@@ -13,14 +13,13 @@ class CommentsService {
      */
     async getComments(postId, limit = 5) {
         try {
-            const response = await this.#client.request({
+            const data = await this.#client.request({
                 method: 'GET',
                 path: '/comments',
                 query: { postId },
-                timeout: 100,
+            }, {
+                timeout: 1000,
             });
-
-            const data = await response.body.json();
 
             const comments = [];
 
@@ -36,7 +35,7 @@ class CommentsService {
 
             return comments;
         } catch (error) {
-            console.log(error.message);
+            return [];
         }
     }
 }
