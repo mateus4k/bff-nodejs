@@ -9,7 +9,7 @@ const usersService = new UsersService();
 class PostsController {
     async getPosts() {
         const posts = await postService.getPosts();
-
+        
         const authorIds = new Set();
         for (const post of posts) {
             authorIds.add(post.authorId)
@@ -21,8 +21,6 @@ class PostsController {
             post.author = users.get(post.authorId);
             post.authorId = undefined;
         }
-
-        console.log(posts[0]);
 
         return posts;
     }
