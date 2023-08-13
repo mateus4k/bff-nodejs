@@ -30,32 +30,30 @@ class PostsController {
      */
     async getPost(id) {
         try {
-            // Fetch data
             const [post, comments] = await Promise.all([
                 postService.getPost(id),
                 commentsService.getComments(id),
             ]);
 
-            // Mount user ids
-            const userIds = new Set([post.authorId]);
-            for (const comment of comments) {
-                userIds.add(comment.userId);
-            }
+            const postAuthor = await usersService.getUser(post.authorId);
 
-            // Fetch users
-            const users = await usersService.getUser([...userIds]);
+            const commentsPromise = comments.map(async (comment) => {
+                const commentAuthor = await usersService.getUser(comment.userId);
 
-            // Transform user data
-            post.author = users.get(post.authorId);
-            for (const comment of comments) {
-                comment.user = users.get(comment.userId);
-                comment.userId = undefined;
-            }
+                return {
+                    ...comment,
+                    user: commentAuthor.id,
+                    userId: undefined,
+                }
+            });
+
+            const commentsData = await Promise.all(commentsPromise);
 
             return {
                 ...post,
+                author: postAuthor.name,
                 authorId: undefined,
-                comments
+                comments: commentsData,
             };
         } catch (error) {
             console.log(error);
