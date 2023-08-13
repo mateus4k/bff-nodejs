@@ -10,6 +10,7 @@ class CommentsService {
         this.#client = new Http('http://127.0.0.1:3002');
         this.#cbGetComments = new CircuitBreaker(async (postId, limit = 5) => {
             const key = `comments:${postId}:${limit}`;
+            const staleKey = `comments-stale:${postId}:${limit}`;
 
             const dataFromCache = await redis.get(key);
             if (dataFromCache) {
@@ -36,13 +37,25 @@ class CommentsService {
                 });
             }
 
-            await redis.set(key, JSON.stringify(comments), 'EX', 60)
+            await redis
+                .pipeline()
+                .set(key, JSON.stringify(comments), 'EX', 60)
+                .set(staleKey, JSON.stringify(comments), 'EX', 6000)
+                .exec();
 
             return comments;
         }, {
             timeout: 1000,
         });
-        this.#cbGetComments.fallback(() => {
+        this.#cbGetComments.fallback(async (postId, limit = 5) => {
+            const staleKey = `comments-stale:${postId}:${limit}`;
+
+            const dataFromCache = await redis.get(staleKey);
+            console.log('stale', {dataFromCache});
+            if (dataFromCache) {
+                return JSON.parse(dataFromCache);
+            }
+
             return [];
         });
     }

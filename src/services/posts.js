@@ -11,6 +11,7 @@ class PostsService {
         this.#client = new Http('http://127.0.0.1:3001');
         this.#cbGetPosts = new CircuitBreaker(async (limit) => {
             const key = `posts:${limit}`;
+            const staleKey = `posts-stale:${limit}`;
 
             const dataFromCache = await redis.get(key);
             if (dataFromCache) {
@@ -36,18 +37,32 @@ class PostsService {
                 });
             }
 
-            await redis.set(key, JSON.stringify(posts), 'EX', 60);
+            await redis
+                .pipeline()
+                .set(key, JSON.stringify(posts), 'EX', 10)
+                .set(staleKey, JSON.stringify(posts), 'EX', 6000)
+                .exec();
 
             return posts;
         }, {
             timeout: 5000,
             errorThresholdPercentage: 90,
         });
-        this.#cbGetPosts.fallback(() => []);
+        this.#cbGetPosts.fallback(async (limit) => {
+            const staleKey = `posts-stale:${limit}`;
+
+            const dataFromCache = await redis.get(staleKey);
+            if (dataFromCache) {
+                return JSON.parse(dataFromCache);
+            }
+
+            return [];
+        });
 
         this.#cbGetPost = new CircuitBreaker(async (id) => {
-            const key = `posts:${id}`;
-
+            const key = `post:${id}`;
+            const staleKey = `post-stale:${id}`;
+            
             const dataFromCache = await redis.get(key);
             if (dataFromCache) {
                 return JSON.parse(dataFromCache);
@@ -67,14 +82,27 @@ class PostsService {
                 authorId: data.authorId,
             };
 
-            await redis.set(key, JSON.stringify(result), 'EX', 60);
+            await redis
+                .pipeline()
+                .set(key, JSON.stringify(result), 'EX', 60)
+                .set(staleKey, JSON.stringify(result), 'EX', 6000)
+                .exec();
 
             return result;
         }, {
             timeout: 5000,
             errorThresholdPercentage: 90,
         });
-        this.#cbGetPost.fallback(() => ({}));
+        this.#cbGetPost.fallback(async (id) => {
+            const staleKey = `post-stale:${id}`;
+
+            const dataFromCache = await redis.get(staleKey);
+            if (dataFromCache) {
+                return JSON.parse(dataFromCache);
+            }
+
+            return {}
+        });
     }
 
     /**

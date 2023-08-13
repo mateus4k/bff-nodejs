@@ -10,6 +10,7 @@ class UsersService {
         this.#client = new Http('http://127.0.0.1:3003');
         this.#cbGetUser = new CircuitBreaker(async (id) => {
             const key = `user:${id}`;
+            const staleKey = `user-stale:${id}`;
 
             const dataFromCache = await redis.get(key);
             if (dataFromCache) {
@@ -28,14 +29,27 @@ class UsersService {
                 name: data.name,
             }
 
-            await redis.set(key, JSON.stringify(result), 'EX', 60);
+            await redis
+                .pipeline()
+                .set(key, JSON.stringify(result), 'EX', 60)
+                .set(staleKey, JSON.stringify(result), 'EX', 6000)
+                .exec();
 
             return result;
         }, {
             timeout: 3000,
             errorThresholdPercentage: 50,
         });
-        this.#cbGetUser.fallback(() => []);
+        this.#cbGetUser.fallback(async (id) => {
+            const staleKey = `user-stale:${id}`;
+
+            const dataFromCache = await redis.get(staleKey);
+            if (dataFromCache) {
+                return JSON.parse(dataFromCache);
+            }
+
+            return {};
+        });
     }
 
     /**
