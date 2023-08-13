@@ -1,5 +1,6 @@
 const CircuitBreaker = require('opossum');
 const Http = require('../utils/http');
+const redis = require('../utils/redis');
 
 class PostsService {
     #client;
@@ -36,6 +37,13 @@ class PostsService {
         this.#cbGetPosts.fallback(() => []);
 
         this.#cbGetPost = new CircuitBreaker(async (id) => {
+            const key = `posts:${id}`;
+
+            const dataFromCache = await redis.get(key);
+            if (dataFromCache) {
+                return JSON.parse(dataFromCache);
+            }
+
             const data = await this.#client.request({
                 method: 'GET',
                 path: `/posts/${id}`,
@@ -43,12 +51,16 @@ class PostsService {
                 timeout: 5000,
             });
 
-            return {
+            const result = {
                 id: data.id,
                 title: data.title,
                 text: data.text,
                 authorId: data.authorId,
             };
+
+            await redis.set(key, JSON.stringify(result), 'EX', 60);
+
+            return result;
         }, {
             timeout: 5000,
             errorThresholdPercentage: 90,
