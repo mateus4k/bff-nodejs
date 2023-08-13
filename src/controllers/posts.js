@@ -9,20 +9,20 @@ const usersService = new UsersService();
 class PostsController {
     async getPosts() {
         const posts = await postService.getPosts();
-        
-        const authorIds = new Set();
-        for (const post of posts) {
-            authorIds.add(post.authorId)
-        }
 
-        const users = await usersService.getUsers([...authorIds]);
+        const resultPromise = posts.map(async (post) => {
+            const user = await usersService.getUser(post.authorId);
 
-        for (const post of posts) {
-            post.author = users.get(post.authorId);
-            post.authorId = undefined;
-        }
+            return {
+                ...post,
+                authorId: undefined,
+                author: user.name,
+            }
+        });
 
-        return posts;
+        const result = await Promise.all(resultPromise);
+
+        return result;
     }
 
     /**
@@ -43,7 +43,7 @@ class PostsController {
             }
 
             // Fetch users
-            const users = await usersService.getUsers([...userIds]);
+            const users = await usersService.getUser([...userIds]);
 
             // Transform user data
             post.author = users.get(post.authorId);
